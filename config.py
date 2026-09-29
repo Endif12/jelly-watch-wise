@@ -90,17 +90,40 @@ class Configuration:
         return default_value
 
     def validate_config_users(self, users):
+        # Compare normalized IDs so old N-format config keeps working when
+        # Jellyfin starts returning D-format (dashed) IDs after an update.
+        from misc import normalize_user_id
+        known = {normalize_user_id(k) for k in users}
         ids = [self.default_user] + [x for x in self.user_limits] + [x for x in self.no_limit_users]
         for i in ids:
-            if i not in users:
-                print(f"Could not find user id <{i}>.")
+            if i is None:
+                continue
+            if normalize_user_id(i) not in known:
+                print(f"Could not find user id <{i}> (normalized <{normalize_user_id(i)}>).")
+
+    def _resolve_user_id(self, user_id, users):
+        """Resolve a config/API user id to the actual API id (handles D vs N format)."""
+        from misc import normalize_user_id
+        if user_id in users:
+            return user_id
+        want = normalize_user_id(user_id)
+        for api_id in users:
+            if normalize_user_id(api_id) == want:
+                return api_id
+        return user_id
 
     def fix_default_user(self, select_users):
         if not self.default_user:
             self.default_user = next(iter(select_users))
+        else:
+            # Migrate old N-format default_user to the current API id format.
+            self.default_user = self._resolve_user_id(self.default_user, select_users)
 
     def get_select_users(self, users):
-        select_users = {k: v for k, v in users.items() if k not in self.no_limit_users}
+        from misc import normalize_user_id
+        no_limit_norm = {normalize_user_id(x) for x in self.no_limit_users}
+        select_users = {k: v for k, v in users.items()
+                        if normalize_user_id(k) not in no_limit_norm}
         self.fix_default_user(select_users)
         return select_users
 
@@ -118,8 +141,16 @@ class Configuration:
             validate_limit_values(user_id, values)
 
     def get_limit(self, user_id):
+        from misc import normalize_user_id
         default_limit = get_limit(self.default_limit)
         user_limit = None
         if user_id in self.user_limits:
             user_limit = get_limit(self.user_limits[user_id])
+        else:
+            # Fall back to normalized match (D-format vs N-format migration).
+            want = normalize_user_id(user_id)
+            for cfg_id, values in self.user_limits.items():
+                if normalize_user_id(cfg_id) == want:
+                    user_limit = get_limit(values)
+                    break
         return user_limit if user_limit else default_limit

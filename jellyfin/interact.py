@@ -132,5 +132,5 @@ class ServerInteraction:
         view['default_limit_msg'] = i18n.t('default', t=default_limit)
         view['altered_limit_msg'] = i18n.t('today', t=altered_limit)
         view['active_msg'] = i18n.t('disabled') if is_disabled else i18n.t('enabled')
-        view['progress'] = time_watched / altered_limit
+        view['progress'] = (time_watched / altered_limit) if altered_limit else (1.0 if time_watched else 0.0)
         view['folders'] = "Folders:\n" + " \n".join(folders)
